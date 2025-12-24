@@ -5,6 +5,7 @@ target/
 !**/src/test/**/target/
 ### custom ###
 application-local.yml
+com.guang.campuspicturebackend.test
 ### STS ###
 .apt_generated
 .classpath

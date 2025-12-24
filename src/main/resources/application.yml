@@ -11,15 +11,22 @@ spring:
     username: postgres
   profiles:
     active: local
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 50MB
 mybatis-plus:
   configuration:
     log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    map-underscore-to-camel-case: true
   # 逻辑删除
   global-config:
     db-config:
-      logic-delete-field: isDelete
+      logic-delete-field: is_delete
       logic-delete-value: 1
       logic-not-delete-value: 0
+      # 雪花ID
+      id-type: assign_id
 # springdoc-openapi项目配置
 springdoc:
   swagger-ui:
