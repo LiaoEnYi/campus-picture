@@ -9,12 +9,18 @@ spring:
     driver-class-name: org.postgresql.Driver
     url: jdbc:postgresql://localhost:5432/campus_picture
     username: postgres
+  data:
+    redis:
+      port: 6376
+      database: 0
+      host: 127.0.0.1
   profiles:
     active: local
   servlet:
     multipart:
       max-file-size: 10MB
       max-request-size: 50MB
+
 mybatis-plus:
   configuration:
     log-impl: org.apache.ibatis.logging.stdout.StdOutImpl

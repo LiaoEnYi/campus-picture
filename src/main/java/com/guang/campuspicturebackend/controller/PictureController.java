@@ -1,10 +1,16 @@
 package com.guang.campuspicturebackend.controller;
 
+import cn.hutool.core.util.RandomUtil;
+import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
+import com.github.benmanes.caffeine.cache.LoadingCache;
 import com.guang.campuspicturebackend.annotation.AuthCheck;
 import com.guang.campuspicturebackend.common.BaseResponse;
 import com.guang.campuspicturebackend.common.DeleteRequest;
+import com.guang.campuspicturebackend.constant.RedisPrefixConstant;
 import com.guang.campuspicturebackend.constant.UserConstant;
 import com.guang.campuspicturebackend.exception.CustomException;
 import com.guang.campuspicturebackend.exception.ErrorCode;
@@ -21,11 +27,15 @@ import com.guang.campuspicturebackend.service.UserService;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.BeanUtils;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.util.DigestUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.Duration;
 import java.util.Date;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 /**
  * @Author L.
@@ -40,6 +50,14 @@ public class PictureController {
     private UserService userService;
     @Resource
     private PictureService pictureService;
+    @Resource
+    private StringRedisTemplate stringRedisTemplate;
+
+    // 构建caffeine 本地缓存
+    private final Cache<String, String> caffeine = Caffeine.newBuilder()
+            .maximumSize(10_000)
+            .expireAfterWrite(Duration.ofMinutes(5))
+            .build();
 
     @PostMapping("/upload")
     public BaseResponse<PictureVO> uploadPicture(@RequestPart("file") MultipartFile multipartFile,
@@ -118,8 +136,31 @@ public class PictureController {
         ThrowUtils.throwIf(size > 20, ErrorCode.PARAMS_ERROR);
         // 普通用户只能看到审核通过的数据
         pictureQueryRequest.setReviewStatus(ReviewStatus.REVIEWED.getCode());
+        // 使用redis缓存数据
+        // 1. 构造key
+        String key = String.format("%s%s", RedisPrefixConstant.PICTURE_BY_PAGE, DigestUtils.md5DigestAsHex(JSONUtil.parse(pictureQueryRequest).toString().getBytes()));
+        // 两级缓存
+        String cacheVal = caffeine.get(key, v -> {
+            return null;
+        });
+        if (cacheVal != null) {
+            Page<PictureVO> res = JSONUtil.toBean(cacheVal, Page.class);
+            return BaseResponse.success(res);
+        }
+        // 查询redis
+        cacheVal = stringRedisTemplate.opsForValue().get(key);
+        if (cacheVal != null) {
+            caffeine.put(key, cacheVal);
+            Page<PictureVO> res = JSONUtil.toBean(cacheVal, Page.class);
+            return BaseResponse.success(res);
+        }
         Page<Picture> picturePage = pictureService.page(new Page<>(current, size), pictureService.getQueryWrapper(pictureQueryRequest));
-        return BaseResponse.success(pictureService.getPictureVOPage(picturePage, request));
+        Page<PictureVO> pictureVOPage = pictureService.getPictureVOPage(picturePage, request);
+        // 将结果存放到redis 缓存中 并且设置随机过期时间 防止缓存雪崩
+        cacheVal = JSONUtil.parse(pictureVOPage).toString();
+        stringRedisTemplate.opsForValue().set(key, cacheVal, RandomUtil.randomInt(5, 11), TimeUnit.MINUTES);
+        caffeine.put(key, cacheVal);
+        return BaseResponse.success(pictureVOPage);
     }
 
     @PostMapping("/edit")
