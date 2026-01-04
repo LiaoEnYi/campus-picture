@@ -2,6 +2,8 @@ package com.guang.campuspicturebackend.manager;
 
 import com.guang.campuspicturebackend.config.MinioConfig;
 import com.guang.campuspicturebackend.constant.MinioConstant;
+import com.guang.campuspicturebackend.exception.CustomException;
+import com.guang.campuspicturebackend.exception.ErrorCode;
 import io.minio.*;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -42,8 +44,8 @@ public class MinioManager {
                             .build()
             );
         } catch (Exception e) {
-            e.printStackTrace();
-            throw new RuntimeException(e);
+            log.error("upload to minio fail: {}", e.getMessage());
+            throw new CustomException(ErrorCode.SYSTEM_ERROR);
         }
         // 上传成功返回访问路径
         String uri = minioConfig.getUri();
@@ -64,8 +66,20 @@ public class MinioManager {
                             .build()
             );
         } catch (Exception e) {
-            e.printStackTrace();
-            throw new RuntimeException(e);
+            log.error("download resource form minio fail: {}", e.getMessage());
+            throw new CustomException(ErrorCode.SYSTEM_ERROR);
+        }
+    }
+
+    public void deleteResource(String bucket, String objectName) {
+        try {
+            minioClient.removeObject(RemoveObjectArgs.builder()
+                    .bucket(bucket)
+                    .object(objectName)
+                    .build());
+        } catch (Exception e) {
+            log.error("delete resource fail:{}", e.getMessage());
+            throw new CustomException(ErrorCode.SYSTEM_ERROR);
         }
     }
 }

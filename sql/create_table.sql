@@ -139,3 +139,48 @@ comment on column picture.review_status is '审核状态';
 comment on column picture.review_message is '审核信息';
 comment on column picture.review_time is '审核时间';
 comment on column picture.review_id is '审核人id';
+
+
+-- 空间表的创建
+create table if not exists space
+(
+    id          bigserial primary key,
+    space_name  varchar(128),
+    space_level int                default 0,
+    max_size    bigint             default 0,
+    max_count   bigint             default 0,
+    total_size  bigint             default 0,
+    total_count bigint             default 0,
+    user_id     bigint    not null,
+    create_time timestamp not null default now(),
+    edit_time   timestamp not null default now(),
+    update_time timestamp not null default now(),
+    is_delete   smallint           default 0
+);
+comment on table space is '空间';
+comment on column space.id is 'id';
+comment on column space.space_name is '空间名称';
+comment on column space.space_level is '空间级别：0-普通版 1-专业版 2-旗舰版';
+comment on column space.max_size is '空间图片的最大总大小';
+comment on column space.max_count is '空间图片的最大数量';
+comment on column space.total_size is '当前空间下的图片总大小';
+comment on column space.total_count is '当前空间下的图片数量';
+comment on column space.user_id is '创建用户 id';
+COMMENT ON COLUMN space.edit_time IS '编辑时间';
+COMMENT
+    ON COLUMN space.create_time IS '创建时间';
+COMMENT
+    ON COLUMN space.update_time IS '更新时间';
+COMMENT
+    ON COLUMN space.is_delete IS '是否删除';
+
+create index idx_user_id on space (user_id);
+create index idx_space_name on space (space_name);
+create index idx_space_level on space (space_level);
+
+
+-- 为图片库新增一个空间id字段
+alter table picture
+    add column space_id bigint null;
+comment on column picture.space_id is '空间id(空表示公共空间)';
+create index idx_space_id on picture (space_id);

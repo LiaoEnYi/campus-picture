@@ -28,4 +28,8 @@ public class PictureUploadRequest implements Serializable {
      * 文件名称
      */
     private String fileName;
+    /**
+     * 空间id
+     */
+    private Long spaceId;
 }

@@ -47,16 +47,11 @@ public class CustomTest {
         System.out.println("height = " + height);
     }
 
-    @Test
-    void testMethod() {
-        System.out.println("a");
-        valid();
-        System.out.println("b");
-    }
 
-    void valid() {
-        if (true) {
-            return;
-        }
+    @Test
+    void subString() {
+        String url = "localhost:9000/picture/public/2001208499207991298/2025-12-21_a801856d-25e7-41f0-ba87-8841e97182dc.png";
+        String objectName = url.substring(url.indexOf('/') + 1);
+        System.out.println(objectName);
     }
 }

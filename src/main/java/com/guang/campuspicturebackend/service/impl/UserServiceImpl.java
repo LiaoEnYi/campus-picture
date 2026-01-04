@@ -3,6 +3,7 @@ package com.guang.campuspicturebackend.service.impl;
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.ObjUtil;
 import cn.hutool.core.util.StrUtil;
+import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -21,12 +22,14 @@ import com.guang.campuspicturebackend.mapper.UserMapper;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.BeanUtils;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.DigestUtils;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
@@ -39,6 +42,8 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
         implements UserService {
     @Resource
     private UserMapper userMapper;
+    @Resource
+    private StringRedisTemplate stringRedisTemplate;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -77,7 +82,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
         );
         ThrowUtils.throwIf(user == null, ErrorCode.PARAMS_ERROR, "用户不存在或密码错误");
         // 记录用户登陆状态
-        request.getSession().setAttribute(UserConstant.USER_LOGIN_STATE, user);
+        // 将登录态保存到redis缓存当中
+        stringRedisTemplate.opsForValue().set("user:state:" + UserConstant.USER_LOGIN_STATE, JSONUtil.toJsonStr(user), 1, TimeUnit.DAYS);
+//        request.getSession().setAttribute(UserConstant.USER_LOGIN_STATE, user);
         return this.getLoginUserVO(user);
     }
 
@@ -99,7 +106,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
 
     @Override
     public User getLoginUser(HttpServletRequest request) {
-        User user = (User) request.getSession().getAttribute(UserConstant.USER_LOGIN_STATE);
+        // 从redis中获取到用户的登录态
+        String str = stringRedisTemplate.opsForValue().get("user:state:" + UserConstant.USER_LOGIN_STATE);
+        User user = JSONUtil.toBean(str, User.class);
+//        User user = (User) request.getSession().getAttribute(UserConstant.USER_LOGIN_STATE);
         ThrowUtils.throwIf(user == null || user.getId() == null, ErrorCode.NOT_LOGIN_ERROR);
         user = this.getById(user.getId());
         ThrowUtils.throwIf(user == null, ErrorCode.NOT_LOGIN_ERROR);

@@ -1,12 +1,10 @@
 package com.guang.campuspicturebackend.controller;
 
 import cn.hutool.core.util.RandomUtil;
-import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
-import com.github.benmanes.caffeine.cache.LoadingCache;
 import com.guang.campuspicturebackend.annotation.AuthCheck;
 import com.guang.campuspicturebackend.common.BaseResponse;
 import com.guang.campuspicturebackend.common.DeleteRequest;
@@ -18,11 +16,13 @@ import com.guang.campuspicturebackend.exception.ThrowUtils;
 import com.guang.campuspicturebackend.model.dto.picture.PictureUploadRequest;
 import com.guang.campuspicturebackend.model.dto.picture.*;
 import com.guang.campuspicturebackend.model.entity.Picture;
+import com.guang.campuspicturebackend.model.entity.Space;
 import com.guang.campuspicturebackend.model.entity.User;
 import com.guang.campuspicturebackend.model.enums.ReviewStatus;
 import com.guang.campuspicturebackend.model.vo.PictureTagCategory;
 import com.guang.campuspicturebackend.model.vo.PictureVO;
 import com.guang.campuspicturebackend.service.PictureService;
+import com.guang.campuspicturebackend.service.SpaceService;
 import com.guang.campuspicturebackend.service.UserService;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
@@ -50,6 +50,8 @@ public class PictureController {
     private UserService userService;
     @Resource
     private PictureService pictureService;
+    @Resource
+    private SpaceService spaceService;
     @Resource
     private StringRedisTemplate stringRedisTemplate;
 
@@ -85,16 +87,8 @@ public class PictureController {
             throw new CustomException(ErrorCode.PARAMS_ERROR);
         }
         User loginUser = userService.getLoginUser(request);
-        long id = deleteRequest.getId();
-
-        Picture oldPicture = pictureService.getById(id);
-        ThrowUtils.throwIf(oldPicture == null, ErrorCode.NOT_FOUND_ERROR);
-        if (!oldPicture.getUserId().equals(loginUser.getId()) && !userService.isAdmin(loginUser)) {
-            throw new CustomException(ErrorCode.NO_AUTH_ERROR);
-        }
-
-        boolean result = pictureService.removeById(id);
-        ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
+        // 不能直接删除图片，需要将Minio的内容也同步删除，避免无效内存占用
+        pictureService.deletePicture(deleteRequest, loginUser);
         return BaseResponse.success(true);
     }
 
@@ -129,8 +123,47 @@ public class PictureController {
         return BaseResponse.success(picture);
     }
 
+    @GetMapping("/get/PictureVO")
+    public BaseResponse<PictureVO> getPictureVOById(long id, HttpServletRequest request) {
+        ThrowUtils.throwIf(id <= 0, ErrorCode.PARAMS_ERROR);
+        Picture picture = pictureService.getById(id);
+        Long spaceId = picture.getSpaceId();
+        if (spaceId != null) {
+            User loginUser = userService.getLoginUser(request);
+            pictureService.checkPictureAuth(picture, loginUser);
+        }
+        ThrowUtils.throwIf(picture == null, ErrorCode.NOT_FOUND_ERROR);
+        return BaseResponse.success(pictureService.getPictureVO(picture, request));
+    }
+
     @PostMapping("/list/page/vo")
     public BaseResponse<Page<PictureVO>> listPictureVOByPage(@RequestBody PictureQueryRequest pictureQueryRequest, HttpServletRequest request) {
+        int current = pictureQueryRequest.getCurrent();
+        int size = pictureQueryRequest.getPageSize();
+        ThrowUtils.throwIf(size > 20, ErrorCode.PARAMS_ERROR);
+        // 空间权限校验
+        Long spaceId = pictureQueryRequest.getSpaceId();
+        if (spaceId == null) {
+            // 公共空间
+            // 普通用户只能看到审核通过的数据
+            pictureQueryRequest.setReviewStatus(ReviewStatus.REVIEWED.getCode());
+            pictureQueryRequest.setNullSpaceId(true);
+        } else {
+            // 私有空间
+            User loginUser = userService.getLoginUser(request);
+            Space space = spaceService.getById(spaceId);
+            ThrowUtils.throwIf(space == null, ErrorCode.NOT_FOUND_ERROR, "空间不存在");
+            if (!space.getUserId().equals(loginUser.getId()) && !userService.isAdmin(loginUser)) {
+                throw new CustomException(ErrorCode.NO_AUTH_ERROR);
+            }
+        }
+        Page<Picture> picturePage = pictureService.page(new Page<>(current, size), pictureService.getQueryWrapper(pictureQueryRequest));
+        Page<PictureVO> pictureVOPage = pictureService.getPictureVOPage(picturePage, request);
+        return BaseResponse.success(pictureVOPage);
+    }
+
+    @PostMapping("/list/page/vo/withCache")
+    public BaseResponse<Page<PictureVO>> listPictureVOByPageWithCache(@RequestBody PictureQueryRequest pictureQueryRequest, HttpServletRequest request) {
         int current = pictureQueryRequest.getCurrent();
         int size = pictureQueryRequest.getPageSize();
         ThrowUtils.throwIf(size > 20, ErrorCode.PARAMS_ERROR);
@@ -168,23 +201,7 @@ public class PictureController {
         if (pictureEditRequest == null || pictureEditRequest.getId() <= 0) {
             throw new CustomException(ErrorCode.PARAMS_ERROR);
         }
-        Picture picture = new Picture();
-        BeanUtils.copyProperties(pictureEditRequest, picture);
-        picture.setTags(JSONUtil.toJsonStr(pictureEditRequest.getTags()));
-        picture.setEditTime(new Date());
-        pictureService.validPicture(picture);
-        User loginUser = userService.getLoginUser(request);
-        Long id = pictureEditRequest.getId();
-        Picture oldPicture = pictureService.getById(id);
-        ThrowUtils.throwIf(oldPicture == null, ErrorCode.NOT_FOUND_ERROR);
-        // 填充审核参数
-        pictureService.fillReviewInfo(picture, loginUser);
-        // 更新数据库
-        if (!oldPicture.getUserId().equals(loginUser.getId()) && !userService.isAdmin(loginUser)) {
-            throw new CustomException(ErrorCode.NO_AUTH_ERROR);
-        }
-        boolean result = pictureService.updateById(picture);
-        ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
+        pictureService.editPicture(pictureEditRequest, request);
         return BaseResponse.success(true);
     }
 

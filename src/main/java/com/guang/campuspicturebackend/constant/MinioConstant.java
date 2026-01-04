@@ -10,4 +10,5 @@ public interface MinioConstant {
     String BUCKET_NAME = "picture";
     String PUBLIC_PREFIX = "public";
     String PRIVATE_PREFIX = "private";
+    String SPACE_PREFIX = "space";
 }

@@ -2,10 +2,8 @@ package com.guang.campuspicturebackend.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.guang.campuspicturebackend.model.dto.picture.PictureUploadRequest;
-import com.guang.campuspicturebackend.model.dto.picture.PictureQueryRequest;
-import com.guang.campuspicturebackend.model.dto.picture.PictureReviewRequest;
-import com.guang.campuspicturebackend.model.dto.picture.PictureUploadByBatchRequest;
+import com.guang.campuspicturebackend.common.DeleteRequest;
+import com.guang.campuspicturebackend.model.dto.picture.*;
 import com.guang.campuspicturebackend.model.entity.Picture;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.guang.campuspicturebackend.model.entity.User;
@@ -44,4 +42,12 @@ public interface PictureService extends IService<Picture> {
     void fillReviewInfo(Picture picture, User loginUser);
 
     Integer uploadPictureByBatch(PictureUploadByBatchRequest request, User loginUser);
+
+    void checkPictureAuth(Picture picture, User loginUser);
+
+    void deletePicture(DeleteRequest deleteRequest, User loginUser);
+
+    void clearPictureFile(Picture picture);
+
+    void editPicture(PictureEditRequest pictureEditRequest, HttpServletRequest request);
 }

@@ -77,7 +77,14 @@ public class PictureQueryRequest extends PageRequest implements Serializable {
      * 创建者id
      */
     private Long userId;
-
+    /**
+     * 空间 id
+     */
+    private Long spaceId;
+    /**
+     * 由于公共图库是没有id的，如果是查询公共图库就要查询space_id字段为null
+     */
+    private boolean nullSpaceId;
     /**
      * 审核状态
      */

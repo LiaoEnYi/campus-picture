@@ -86,6 +86,8 @@ public class PictureVO implements Serializable {
      */
     private Date updateTime;
 
+    private Long spaceId;
+
     private UserVO user;
 
     public static Picture voToObj(PictureVO pictureVO) {
