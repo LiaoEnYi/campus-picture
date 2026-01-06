@@ -1,11 +1,15 @@
 package com.guang.campuspicturebackend.controller;
 
 import cn.hutool.core.util.RandomUtil;
+import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.guang.campuspicturebackend.annotation.AuthCheck;
+import com.guang.campuspicturebackend.api.aliyun.AliYunAiApi;
+import com.guang.campuspicturebackend.api.aliyun.model.CreateOutPaintingTaskResponse;
+import com.guang.campuspicturebackend.api.aliyun.model.GetOutPaintingTaskResponse;
 import com.guang.campuspicturebackend.common.BaseResponse;
 import com.guang.campuspicturebackend.common.DeleteRequest;
 import com.guang.campuspicturebackend.constant.RedisPrefixConstant;
@@ -54,7 +58,8 @@ public class PictureController {
     private SpaceService spaceService;
     @Resource
     private StringRedisTemplate stringRedisTemplate;
-
+    @Resource
+    private AliYunAiApi aliYunAiApi;
     // 构建caffeine 本地缓存
     private final Cache<String, String> caffeine = Caffeine.newBuilder()
             .maximumSize(10_000)
@@ -232,6 +237,42 @@ public class PictureController {
         User loginUser = userService.getLoginUser(servletRequest);
         Integer res = pictureService.uploadPictureByBatch(batchRequest, loginUser);
         return BaseResponse.success(res);
+    }
+
+    @PostMapping("/search/color")
+    public BaseResponse<List<PictureVO>> searchPictureByColor(@RequestBody SearchPictureByColorRequest searchPictureByColorRequest, HttpServletRequest request) {
+        ThrowUtils.throwIf(searchPictureByColorRequest == null, ErrorCode.PARAMS_ERROR);
+        String picColor = searchPictureByColorRequest.getPicColor();
+        Long spaceId = searchPictureByColorRequest.getSpaceId();
+        User loginUser = userService.getLoginUser(request);
+        List<PictureVO> pictureVOS = pictureService.searchPictureByColor(spaceId, picColor, loginUser);
+        return BaseResponse.success(pictureVOS);
+    }
+
+    @PostMapping("/edit/batch")
+    public BaseResponse<Boolean> editPictureByBath(@RequestBody PictureEditByBatchRequest pictureEditByBatchRequest, HttpServletRequest request) {
+        ThrowUtils.throwIf(pictureEditByBatchRequest == null, ErrorCode.PARAMS_ERROR);
+        User loginUser = userService.getLoginUser(request);
+        pictureService.editPictureByBatch(pictureEditByBatchRequest, loginUser);
+        return BaseResponse.success(true);
+    }
+
+    @PostMapping("/out_painting/create_task")
+    public BaseResponse<CreateOutPaintingTaskResponse> createPictureOutTask(@RequestBody CreatePictureOutPaintingTaskRequest request,
+                                                                            HttpServletRequest httpServletRequest) {
+        if (request == null || request.getPictureId() == null) {
+            throw new CustomException(ErrorCode.PARAMS_ERROR);
+        }
+        User loginUser = userService.getLoginUser(httpServletRequest);
+        CreateOutPaintingTaskResponse pictureOutPaintingTask = pictureService.createPictureOutPaintingTask(request, loginUser);
+        return BaseResponse.success(pictureOutPaintingTask);
+    }
+
+    @GetMapping("/out_painting/get_task")
+    public BaseResponse<GetOutPaintingTaskResponse> getPictureOutPaintingTask(String taskId) {
+        ThrowUtils.throwIf(StrUtil.isBlank(taskId), ErrorCode.PARAMS_ERROR);
+        GetOutPaintingTaskResponse outputTask = aliYunAiApi.getOutputTask(taskId);
+        return BaseResponse.success(outputTask);
     }
 }
 

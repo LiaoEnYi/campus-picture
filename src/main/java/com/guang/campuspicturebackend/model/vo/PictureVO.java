@@ -88,6 +88,8 @@ public class PictureVO implements Serializable {
 
     private Long spaceId;
 
+    private String picColor;
+
     private UserVO user;
 
     public static Picture voToObj(PictureVO pictureVO) {

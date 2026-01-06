@@ -94,7 +94,14 @@ public class PictureQueryRequest extends PageRequest implements Serializable {
      * 审核信息
      */
     private String reviewMessage;
-
+    /**
+     * 开始编辑时间（范围查询）
+     */
+    private Date startEditTime;
+    /**
+     * 结束编辑时间（范围查询）
+     */
+    private Date endEditTime;
 
     /**
      * 审核人id

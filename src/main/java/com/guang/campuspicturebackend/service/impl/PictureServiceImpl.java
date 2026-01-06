@@ -7,6 +7,9 @@ import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.guang.campuspicturebackend.api.aliyun.AliYunAiApi;
+import com.guang.campuspicturebackend.api.aliyun.model.CreateOutPaintingTaskRequest;
+import com.guang.campuspicturebackend.api.aliyun.model.CreateOutPaintingTaskResponse;
 import com.guang.campuspicturebackend.common.DeleteRequest;
 import com.guang.campuspicturebackend.constant.MinioConstant;
 import com.guang.campuspicturebackend.exception.CustomException;
@@ -26,6 +29,7 @@ import com.guang.campuspicturebackend.service.PictureService;
 import com.guang.campuspicturebackend.mapper.PictureMapper;
 import com.guang.campuspicturebackend.service.SpaceService;
 import com.guang.campuspicturebackend.service.UserService;
+import com.guang.campuspicturebackend.tool.ColorSimilarUtils;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
@@ -34,12 +38,15 @@ import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 import org.springframework.beans.BeanUtils;
+import org.springframework.context.annotation.Bean;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.awt.*;
 import java.io.IOException;
 import java.util.*;
+import java.util.List;
 import java.util.stream.Collectors;
 
 /**
@@ -67,6 +74,9 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
 
     @Resource
     private TransactionTemplate transactionTemplate;
+
+    @Resource
+    private AliYunAiApi aliYunAiApi;
 
     @Override
     public PictureVO uploadPicture(Object fileResource, PictureUploadRequest request, User loginUser) {
@@ -229,6 +239,8 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
         String sortOrder = request.getSortOrder();
         Long spaceId = request.getSpaceId();
         boolean nullSpaceId = request.isNullSpaceId();
+        Date startEditTime = request.getStartEditTime();
+        Date endEditTime = request.getEndEditTime();
 
         if (StrUtil.isNotBlank(searchText)) {
             wrapper.and(v -> v.like("name", searchText).or().like("introduction", searchText));
@@ -248,6 +260,8 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
         wrapper.eq(ObjUtil.isNotEmpty(reviewId), "review_id", reviewId);
         wrapper.eq(ObjUtil.isNotEmpty(spaceId), "space_id", spaceId);
         wrapper.isNull(nullSpaceId, "space_id");
+        wrapper.ge(ObjUtil.isNotNull(startEditTime), "edit_time", startEditTime);
+        wrapper.lt(ObjUtil.isNotNull(endEditTime), "edit_time", endEditTime);
         if (CollUtil.isNotEmpty(tags)) {
             for (String tag : tags) {
                 wrapper.like("tags", "\"" + tag + "\"");
@@ -419,6 +433,105 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
         }
         boolean result = this.updateById(picture);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
+    }
+
+    @Override
+    public List<PictureVO> searchPictureByColor(Long spaceId, String picColor, User loginUser) {
+        ThrowUtils.throwIf(spaceId == null || StrUtil.isBlank(picColor), ErrorCode.PARAMS_ERROR);
+        ThrowUtils.throwIf(ObjUtil.isNull(loginUser), ErrorCode.NO_AUTH_ERROR);
+        Space space = spaceService.getById(spaceId);
+        ThrowUtils.throwIf(space == null, ErrorCode.NOT_FOUND_ERROR);
+        if (!space.getUserId().equals(loginUser.getId()) && !userService.isAdmin(loginUser)) {
+            throw new CustomException(ErrorCode.NO_AUTH_ERROR);
+        }
+        List<Picture> list = this.lambdaQuery()
+                .eq(Picture::getSpaceId, spaceId)
+                .isNotNull(Picture::getPicColor)
+                .list();
+        if (list.isEmpty()) {
+            return List.of();
+        }
+        Color targetColor = Color.decode(picColor);
+        List<Picture> collect = list.stream()
+                .sorted(Comparator.comparingDouble(picture -> {
+                    String picColor1 = picture.getPicColor();
+                    if (StrUtil.isBlank(picColor1)) {
+                        return Double.MAX_VALUE;
+                    }
+                    Color source = Color.decode(picColor1);
+                    return -ColorSimilarUtils.calculateSimilarity(targetColor, source);
+                })).limit(12)
+                .toList();
+        return collect.stream()
+                .map(PictureVO::objToVO)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void editPictureByBatch(PictureEditByBatchRequest request, User loginUser) {
+        String nameRule = request.getNameRule();
+        List<Long> pictureIdList = request.getPictureIdList();
+        Long spaceId = request.getSpaceId();
+        String category = request.getCategory();
+        List<String> tags = request.getTags();
+
+        ThrowUtils.throwIf(pictureIdList.isEmpty() || spaceId == null, ErrorCode.PARAMS_ERROR);
+        ThrowUtils.throwIf(loginUser == null, ErrorCode.NO_AUTH_ERROR);
+
+        Space space = spaceService.getById(spaceId);
+        ThrowUtils.throwIf(space == null, ErrorCode.NOT_FOUND_ERROR);
+        if (!loginUser.getId().equals(space.getUserId())) {
+            throw new CustomException(ErrorCode.NO_AUTH_ERROR);
+        }
+        List<Picture> pictureList = this.lambdaQuery()
+                .select(Picture::getId, Picture::getSpaceId)
+                .eq(Picture::getSpaceId, spaceId)
+                .in(Picture::getId, pictureIdList)
+                .list();
+        if (pictureList.isEmpty()) {
+            return;
+        }
+        pictureList.forEach(picture -> {
+            if (StrUtil.isNotBlank(category)) {
+                picture.setCategory(category);
+            }
+            if (!tags.isEmpty()) {
+                picture.setCategory(JSONUtil.toJsonStr(tags));
+            }
+        });
+        fillPictureWithNameRule(pictureList, nameRule);
+        boolean res = this.updateBatchById(pictureList);
+        ThrowUtils.throwIf(!res, ErrorCode.OPERATION_ERROR);
+    }
+
+    @Override
+    public CreateOutPaintingTaskResponse createPictureOutPaintingTask(CreatePictureOutPaintingTaskRequest createPictureOutPaintingTaskRequest, User loginUser) {
+        ThrowUtils.throwIf(createPictureOutPaintingTaskRequest == null, ErrorCode.PARAMS_ERROR);
+        long pictureId = createPictureOutPaintingTaskRequest.getPictureId();
+        Picture picture = Optional.ofNullable(this.getById(pictureId)).orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND_ERROR));
+        checkPictureAuth(picture, loginUser);
+        CreateOutPaintingTaskRequest createOutPaintingTaskRequest = new CreateOutPaintingTaskRequest();
+        CreateOutPaintingTaskRequest.Input input = new CreateOutPaintingTaskRequest.Input();
+        input.setImageUrl(picture.getUrl());
+        createOutPaintingTaskRequest.setInput(input);
+        BeanUtils.copyProperties(createPictureOutPaintingTaskRequest, createOutPaintingTaskRequest);
+        return aliYunAiApi.createPaintingTask(createOutPaintingTaskRequest);
+    }
+
+    private void fillPictureWithNameRule(List<Picture> pictureIdList, String nameRule) {
+        int count = 1;
+
+        try {
+            for (Picture picture : pictureIdList) {
+                String name = nameRule.replaceAll("\\{序号}", String.valueOf(count++));
+                picture.setName(name);
+            }
+        } catch (Exception e) {
+            log.error("名称解析错误", e);
+            throw new CustomException(ErrorCode.OPERATION_ERROR, "名称解析错误");
+        }
+
     }
 }
 

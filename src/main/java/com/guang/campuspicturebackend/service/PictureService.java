@@ -2,6 +2,7 @@ package com.guang.campuspicturebackend.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.guang.campuspicturebackend.api.aliyun.model.CreateOutPaintingTaskResponse;
 import com.guang.campuspicturebackend.common.DeleteRequest;
 import com.guang.campuspicturebackend.model.dto.picture.*;
 import com.guang.campuspicturebackend.model.entity.Picture;
@@ -9,6 +10,8 @@ import com.baomidou.mybatisplus.extension.service.IService;
 import com.guang.campuspicturebackend.model.entity.User;
 import com.guang.campuspicturebackend.model.vo.PictureVO;
 import jakarta.servlet.http.HttpServletRequest;
+
+import java.util.List;
 
 /**
  * @author Ocean
@@ -50,4 +53,10 @@ public interface PictureService extends IService<Picture> {
     void clearPictureFile(Picture picture);
 
     void editPicture(PictureEditRequest pictureEditRequest, HttpServletRequest request);
+
+    List<PictureVO> searchPictureByColor(Long spaceId, String picColor, User loginUser);
+
+    void editPictureByBatch(PictureEditByBatchRequest request, User loginUser);
+
+    CreateOutPaintingTaskResponse createPictureOutPaintingTask(CreatePictureOutPaintingTaskRequest createPictureOutPaintingTaskRequest, User loginUser);
 }

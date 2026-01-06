@@ -184,3 +184,8 @@ alter table picture
     add column space_id bigint null;
 comment on column picture.space_id is '空间id(空表示公共空间)';
 create index idx_space_id on picture (space_id);
+
+-- 图片主色调
+alter table picture
+    add column pic_color varchar(16) null;
+comment on column picture.pic_color is '图片主色调';

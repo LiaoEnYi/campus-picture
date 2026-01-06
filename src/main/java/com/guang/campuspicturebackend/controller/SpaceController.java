@@ -44,11 +44,11 @@ public class SpaceController {
     private UserService userService;
 
     @PostMapping("/add")
-    public BaseResponse<SpaceVO> addSpace(@RequestBody SpaceAddRequest spaceAddRequest, HttpServletRequest request) {
+    public BaseResponse<Long> addSpace(@RequestBody SpaceAddRequest spaceAddRequest, HttpServletRequest request) {
         ThrowUtils.throwIf(spaceAddRequest == null, ErrorCode.PARAMS_ERROR);
         User loginUser = userService.getLoginUser(request);
-        spaceService.addSpace(spaceAddRequest, loginUser);
-        return null;
+        long spaceId = spaceService.addSpace(spaceAddRequest, loginUser);
+        return BaseResponse.success(spaceId);
     }
 
     @PostMapping("/update")
@@ -100,6 +100,16 @@ public class SpaceController {
         return BaseResponse.success(space);
     }
 
+    @GetMapping("/get/vo")
+    public BaseResponse<SpaceVO> getSpaceVOById(long id, HttpServletRequest request) {
+        ThrowUtils.throwIf(id <= 0, ErrorCode.PARAMS_ERROR);
+        // 查询数据库
+        Space space = spaceService.getById(id);
+        ThrowUtils.throwIf(space == null, ErrorCode.NOT_FOUND_ERROR);
+        SpaceVO spaceVO = spaceService.getSpaceVO(space, request);
+        // 获取封装类
+        return BaseResponse.success(spaceVO);
+    }
     @PostMapping("/list/page/vo")
     @AuthCheck(mustRole = UserConstant.ADMIN)
     public BaseResponse<Page<SpaceVO>> listSpaceVOByPage(@RequestBody SpaceQueryRequest spaceQueryRequest, HttpServletRequest request) {

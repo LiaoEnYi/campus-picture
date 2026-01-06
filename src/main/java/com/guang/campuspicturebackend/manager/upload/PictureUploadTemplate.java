@@ -70,14 +70,12 @@ public abstract class PictureUploadTemplate {
             tempFile = File.createTempFile("minio", filename);
             processPicture(fileSource, tempFile);
             // 获得图片的尺寸
-            Dimension dimOfPic = ImageIOTool.getDimOfPic(tempFile);
-            if (dimOfPic == null) {
-                // 如果为空设置一个默认的尺寸
-                dimOfPic = new Dimension(-1, -1);
-            }
+
             String absolutePath = tempFile.getAbsolutePath();
+
             String url = minioManager.upload(absolutePath, MinioConstant.BUCKET_NAME, objectName, type);
-            return getUploadPictureResult(filename, dimOfPic, url, tempFile, type);
+
+            return getUploadPictureResult(filename, url, tempFile, type);
         } catch (Exception e) {
             log.error("图片上传到服务器失败", e);
             throw new CustomException(ErrorCode.OPERATION_ERROR);
@@ -88,9 +86,14 @@ public abstract class PictureUploadTemplate {
     }
 
     @NotNull
-    private static UploadPictureResult getUploadPictureResult(String filename, Dimension dimOfPic, String url, File tempFile, String type) {
+    private static UploadPictureResult getUploadPictureResult(String filename, String url, File tempFile, String type) {
         // 填充返回结果
         UploadPictureResult uploadPictureResult = new UploadPictureResult();
+        Dimension dimOfPic = ImageIOTool.getDimOfPic(tempFile);
+        if (dimOfPic == null) {
+            // 如果为空设置一个默认的尺寸
+            dimOfPic = new Dimension(-1, -1);
+        }
         uploadPictureResult.setName(filename);
         double height = dimOfPic.getHeight();
         double width = dimOfPic.getWidth();
@@ -101,6 +104,9 @@ public abstract class PictureUploadTemplate {
         uploadPictureResult.setPicWidth((int) width);
         uploadPictureResult.setPicSize(FileUtil.size(tempFile));
         uploadPictureResult.setPicFormat(type);
+        // 获得图片主色调
+        String color = ImageIOTool.getColorOfPic(tempFile);
+        uploadPictureResult.setPicColor(color);
         return uploadPictureResult;
     }
 
